@@ -304,8 +304,11 @@ def publish()
     puts "Inspecting #{cv['name']}"
 
     needs_publish = false
-    if cv.has_key?('last_published') and cv['last_published']
-      cv_last_published = Time.xmlschema(cv['last_published']) rescue Time.parse(cv['last_published'])
+    if cv.has_key?('versions') and cv['versions'].length > 0
+      last_ver_published = cv['versions'].sort_by{|ver| ver['published']}.last['published']
+      cv_last_published = Time.xmlschema(last_ver_published) rescue Time.parse(last_ver_published)
+    elsif cv.has_key?('last_published') and cv['last_published']
+        cv_last_published = Time.xmlschema(cv['last_published']) rescue Time.parse(cv['last_published'])
     else
       cv_last_published = Time.new(0)
     end
