@@ -428,7 +428,6 @@ def publish()
     if needs_publish
       puts "Publishing #{cv['name']}"
       if not @options[:noop]
-        puts " Publishing #{cv['name']}"
         req = @api.resource(:content_views).call(:publish, {:id => cv['id'], :description => 'autopublish'})
         tasks << req['id']
         wait([req['id']]) if @options[:sequential]
