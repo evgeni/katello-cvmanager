@@ -231,8 +231,8 @@ def update()
         desired_version = @yaml[:cv][component['content_view']['label']]
         puts_verbose "  Found new version #{desired_version} in CV part of the config"
       else
-        desired_version = component['version']
         puts_verbose "  Did not find a new version, keeping #{desired_version}"
+        next
       end
 
       # instead of hard-coding the versions, the user can also specify "latest"
@@ -428,6 +428,7 @@ def publish()
     if needs_publish
       puts "Publishing #{cv['name']}"
       if not @options[:noop]
+        puts " Publishing #{cv['name']}"
         req = @api.resource(:content_views).call(:publish, {:id => cv['id'], :description => 'autopublish'})
         tasks << req['id']
         wait([req['id']]) if @options[:sequential]
