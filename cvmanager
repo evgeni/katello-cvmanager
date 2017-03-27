@@ -441,8 +441,9 @@ end
 
 def puppet()
   tasks = []
-
   modules = {} 
+
+  ## get all the puppet modules currently in satellite
   req = @api.resource(:puppet_modules).call(:index, {:organization_id => @options[:org], :full_results => true})
   req['results'].each do |r|
     modules[r['author'] + "-" + r['name'] +"-"+ r['version']]= r
@@ -453,7 +454,8 @@ def puppet()
       modules[r['author'] + "-" + r['name'] +"-"+ r['version']]= r
     end
   end
-  ##for each cv in the config file
+
+  ## for each cv in the config file
   @yaml[:puppet].keys.each do |cv|
      needs_publish = false
      ## get the content view for its id, and its list of current puppet modules
@@ -464,7 +466,8 @@ def puppet()
      contentview['results'][0]['puppet_modules'].each do |m|
        current[m['author']+"-"+m['name']]=m
      end
-     ##for each puppet module in the cv in the config file
+
+     ## for each puppet module in the cv in the config file compare if the uuid matches the version currently in the cv
      @yaml[:puppet][cv].keys.each do |pmod|
        modulename = pmod + "-" + @yaml[:puppet][cv][pmod]
        if current.has_key?(pmod) and (current[pmod]['uuid'] != modules[modulename]['uuid'] )
@@ -481,7 +484,7 @@ def puppet()
        end
      end
      if needs_publish
-       tasks += publishCV(id,cv)
+       tasks += publishCV(cvid,cv)
      end
   end 
   wait(tasks)
