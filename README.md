@@ -51,6 +51,20 @@ After a new version of a Composite Content View is created it is only available 
 `cvmanager promote` will iterate over all listed Composite Content Views and check if their latest version is promoted to Development, if it isn't the promote is triggered.
 
 
+## Update puppet modules
+A Content View includes specific versions of the puppet modules it includes. These can be set to always update to the latest version or to a fixed specific version number for the module. 
+
+`cvmanager` can automatically update the modules to a specified version using `cvmanager puppet`
+
+    :puppet:
+      rhel7:
+        test-test1: 0.2.0
+        test-test2: 0.2.0
+        test-test3: 0.2.0
+
+This will publish the rhel7 Content View with the test-test1, test-test2, and test-test3 puppet modules all at version 0.2.0.  Any puppet modules in the cv not mention in the config will behave as they would for any other publish (i.e. modules set to "latest" will be updated).
+
+
 ## Configuration
 
 Example configuration for `cvmanager`:
