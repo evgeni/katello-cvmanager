@@ -443,6 +443,72 @@ def publish()
   wait(tasks)
 end
 
+
+def puppet()
+  tasks = []
+  modules = {} 
+
+  ## get all the puppet modules currently in satellite
+  req = @api.resource(:puppet_modules).call(:index, {:organization_id => @options[:org], :full_results => true})
+  req['results'].each do |r|
+    modules[r['author'] + "-" + r['name'] +"-"+ r['version']]= r
+  end
+  while (req['results'].length == req['per_page'].to_i)
+    req = @api.resource(:puppet_modules).call(:index, {:organization_id => @options[:org], :full_results => true, :per_page => req['per_page'], :page => req['page'].to_i+1})
+    req['results'].each do |r|
+      modules[r['author'] + "-" + r['name'] +"-"+ r['version']]= r
+    end
+  end
+
+  ## for each cv in the config file
+  @yaml[:puppet].keys.each do |cv|
+     needs_publish = false
+     ## get the content view for its id, and its list of current puppet modules
+     contentview = @api.resource(:content_views).call(:index, {:organization_id => @options[:org],:search => "name=" +cv })
+     cvid = contentview['results'][0]['id']
+     current = {}
+     ## current modules in the CV
+     contentview['results'][0]['puppet_modules'].each do |m|
+       current[m['author']+"-"+m['name']]=m
+     end
+
+     ## for each puppet module in the cv in the config file compare if the uuid matches the version currently in the cv
+     @yaml[:puppet][cv].keys.each do |pmod|
+       modulename = pmod + "-" + @yaml[:puppet][cv][pmod]
+       if current.has_key?(pmod) and (current[pmod]['uuid'] != modules[modulename]['uuid'] )
+         needs_publish = true
+         
+         if not @options[:noop]
+           puts "updating #{cv} to #{modulename}"
+           req = @api.resource(:content_view_puppet_modules).call(:update, {:organization_id => @options[:org], :full_results => true, "content_view_id"=>cvid ,"id"=>current[pmod]['id'] ,"content_view_puppet_module"=>modules[modulename] })
+         else
+           puts " [noop] updating #{cv} to #{modulename}"
+         end  
+       else
+         puts "#{cv} already includes #{modulename}"
+       end
+     end
+     if needs_publish
+       tasks += publishCV(cvid,cv)
+     end
+  end 
+  wait(tasks)
+end
+
+
+def publishCV(id,name)
+  tasks = []
+  if not @options[:noop]
+    req = @api.resource(:content_views).call(:publish, {:id => id, :description => @options[:description]})
+    tasks << req['id']
+    wait([req['id']]) if @options[:sequential]
+  else
+    puts " [noop] #{name}"
+  end
+  tasks
+end
+
+
 def wait(tasks)
   if @options[:wait]
     need_wait = tasks
@@ -483,4 +549,6 @@ elsif action == 'promote'
   promote
 elsif action == 'publish'
   publish
+elsif action == 'puppet'
+  puppet
 end
