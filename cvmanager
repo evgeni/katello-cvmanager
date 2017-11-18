@@ -133,6 +133,9 @@ if not @options[:pass]
   @options[:pass] = ask('Satellite password: ') { |q| q.echo = false }
 end
 
+# Decrypt password with base 64
+@options[:pass] = Base64.decode64(@options[:pass])
+
 # sanitize non-complete config files
 [:cv, :ccv].each do |key|
   if not @yaml.has_key?(key)
