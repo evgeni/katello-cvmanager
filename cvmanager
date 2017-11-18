@@ -201,7 +201,7 @@ def clean()
 end
 
 def checktask(task, last_date)
-  task_completed_at = Time.xmlschema(task['ended_at']) rescue Time.parse(task['ended_at'])
+  task_completed_at = Time.xmlschema(task['started_at']) rescue Time.parse(task['started_at'])
   if task_completed_at >= last_date
     puts_verbose "Past task was completed at #{task_completed_at}, which is after #{last_date}"
     if task['humanized']['output'] == "No new packages."
@@ -376,9 +376,9 @@ def publish()
       # get repo data
       repo = @api.resource(:repositories).call(:show, {:id => repo_id})
       # check if the last sync has been ever completed
-      if repo.has_key?('last_sync') and repo['last_sync'] and repo['last_sync'].has_key?('ended_at') and repo['last_sync']['ended_at']
+      if repo.has_key?('last_sync') and repo['last_sync'] and repo['last_sync'].has_key?('started_at') and repo['last_sync']['started_at']
         # if sync completed, save last end sync time
-        repo_last_sync = Time.xmlschema(repo['last_sync']['ended_at']) rescue Time.parse(repo['last_sync']['ended_at'])
+        repo_last_sync = Time.xmlschema(repo['last_sync']['started_at']) rescue Time.parse(repo['last_sync']['started_at'])
       else
         # if sync never completed, save 0 as sync time
         repo_last_sync = Time.new(0)
@@ -402,10 +402,10 @@ def publish()
               while (taskreq == nil or taskreq['results'].length == taskreq['per_page'].to_i)
                 # if nil, new data will be taken from zero. otherwise take next page
                 if (taskreq == nil)
-                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success', :full_results => true, :per_page => 10, :sort_by => :ended_at})
+                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success and started_at >= #{cv_last_published.strftime("%Y%m%dT%H:%M:%S")} and resource_id = #{repo['id']}', :full_results => true, :per_page => 10, :sort_by => :started_at})
                   puts_verbose "Inspecing sync tasks to #10"
                 else
-                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success', :full_results => true, :per_page => taskreq['per_page'], :sort_by => :ended_at, :page => taskreq['page'].to_i+1})
+                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success and started_at >= #{cv_last_published.strftime("%Y%m%dT%H:%M:%S")} and resource_id = #{repo['id']}', :full_results => true, :per_page => taskreq['per_page'], :sort_by => :started_at, :page => taskreq['page'].to_i+1})
                   puts_verbose "Inspecing sync tasks to ##{taskreq['per_page']}"
                 end
                 # iterate over the results
