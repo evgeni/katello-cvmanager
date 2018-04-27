@@ -1,3 +1,11 @@
+# Satellite 6.3 Update
+
+Satellite 6.3 no longer provide apipie via the repositories.  To use this utility, install apipie.
+
+```
+gem install apipie
+```
+
 # cvmanager
 
 For automation of some common tasks related to Content Views we created a tool called `cvmanager`. It consists of a Ruby script (`cvmanager`) and a YAML-formatted configuration file (`cvmanager.yaml`). The various features are described in the following chapters.
