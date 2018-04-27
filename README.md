@@ -8,6 +8,10 @@ gem install apipie
 
 This version will no longer work with Satellite 6.2 or less.
 
+# Origin
+
+This was forked from katello-cvmanger https://github.com/RedHatSatellite/katello-cvmanager and updated to work with Satellite 6.3.
+
 # cvmanager
 
 For automation of some common tasks related to Content Views we created a tool called `cvmanager`. It consists of a Ruby script (`cvmanager`) and a YAML-formatted configuration file (`cvmanager.yaml`). The various features are described in the following chapters.
