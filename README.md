@@ -4,6 +4,7 @@ For automation of some common tasks related to Content Views we created a tool c
 
 `cvmanager` is designed so that it can be run from `cron` or some other kind of scheduler easily.
 Please remember to use only `labels` and not `names` when defining the Content Views or Composite Content Views in the configuration file.
+<<<<<<< HEAD
 
 ## Satellite 6.3 dependencies
 `apipie-bindings` for ruby is no more provided from Satellite 6.3.
@@ -17,6 +18,8 @@ You can also use scl
 $ scl enable tfm
 $ ruby ./cvmanager [...]
 ```
+=======
+>>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
 
 ## Cleanup of old Content Views
 

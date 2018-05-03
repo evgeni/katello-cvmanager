@@ -46,8 +46,8 @@ require 'time'
 
 optparse = OptionParser.new do |opts|
   opts.banner = "Usage: #{opts.program_name} ACTION [options]"
-  opts.version = "0.1"
-  
+  opts.version = "0.2"
+
   opts.separator ""
   opts.separator "#{opts.summary_indent}ACTION can be any of [clean,update,publish,promote]"
   opts.separator ""
@@ -180,12 +180,15 @@ def clean()
   cvs.each do |cv|
     keep = []
     puts "Inspecting #{cv['label']}"
+<<<<<<< HEAD
     # On the first Composite Content View found, we need to ensure that dependencies has been cleaned up
     if cv["composite"] == true and firstccv == true
       puts "First Composite Content View, waiting for the Content View tasks to be completed"
       firstccv = false
       wait(tasks)
     end
+=======
+>>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
     cv['versions'].sort_by { |v| v['version'].to_f }.reverse.each do |version|
       if not version['environment_ids'].empty?
         puts_verbose " #{cv['label']} v#{version['version']} is published to the following environments: #{version['environment_ids']}, skipping."
@@ -276,11 +279,19 @@ def update()
 
     was_updated = false
 
+<<<<<<< HEAD
     puts "Inspecting #{ccv['label']}, id #{ccv['id']}"
 
     # loop through the components and check if they are uptodate
     ids = Array.new(ccv['component_ids'])
     ccv['components'].each_with_index do |component, component_id|
+=======
+    puts "Inspecting #{ccv['label']}"
+
+    # loop through the components and check if they are uptodate
+    ids = Array.new(ccv['component_ids'])
+    ccv['components'].each do |component|
+>>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
       puts " Checking #{component['content_view']['label']}"
 
       # get the desired version for this component from the YAML
@@ -436,7 +447,11 @@ def publish()
 
   cvs.each do |cv|
     # if CV is not listed in csv, skip
+<<<<<<< HEAD
     puts_verbose "Started parsing Content View #{cv['label']}"
+=======
+    puts_verbose "Checking Content View #{cv['label']}"
+>>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
     next if not @yaml[:publish].include?(cv['label'])
 
     # if the CV is listed, write it
