@@ -3,6 +3,20 @@
 For automation of some common tasks related to Content Views we created a tool called `cvmanager`. It consists of a Ruby script (`cvmanager`) and a YAML-formatted configuration file (`cvmanager.yaml`). The various features are described in the following chapters.
 
 `cvmanager` is designed so that it can be run from `cron` or some other kind of scheduler easily.
+Please remember to use only `labels` and not `names` when defining the Content Views or Composite Content Views in the configuration file.
+
+## Satellite 6.3 dependencies
+`apipie-bindings` for ruby is no more provided from Satellite 6.3.
+You can use bundle or scl to enable it.
+```
+$ bundle install
+$ bundle exec ruby ./cvmanager [...]
+```
+You can also use scl
+```
+$ scl enable tfm
+$ ruby ./cvmanager [...]
+```
 
 ## Cleanup of old Content Views
 
@@ -57,7 +71,7 @@ Example configuration for `cvmanager`:
 
     :settings:
       :user: admin
-      :pass: changeme
+      :encoded_pass: Y2hhbmdlbWU=
       :uri: https://localhost
       :timeout: 300
       :org: 1
@@ -77,7 +91,8 @@ Example configuration for `cvmanager`:
       - application1
 
 * `user`: username of a Satellite 6 user to execute the actions with
-* `pass`: password of the same user
+* `pass`: password of the same user in cleartext
+* `encoded_pass`: password of the same user in base64 encryption (generate with 'echo -n "sat_password" | base64')
 * `uri`: URI of the Satellite 6, `https://localhost` will work when executed directly on the Satellite machine
 * `timeout`: Timeout, in seconds, for any API calls made
 * `org`: Organization ID (not name) for managing content in

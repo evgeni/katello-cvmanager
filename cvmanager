@@ -64,6 +64,9 @@ optparse = OptionParser.new do |opts|
   opts.on("-p", "--pass=PASS", "Password to log in to Satellite") do |p|
     @options[:pass] = p
   end
+  opts.on("--encoded_pass=PASS", "Password, base64 encoded, to log in to Satellite") do |encoded_pass|
+    @options[:encoded_pass] = encoded_pass
+  end
   opts.on("-o", "--organization-id=ID", "ID of the Organization to manage CVs in") do |o|
     @options[:org] = o
   end
@@ -129,6 +132,11 @@ if not @options[:user]
   @options[:user] = ask('Satellite username: ')
 end
 
+if @options[:encoded_pass]
+  # Decrypt password with base 64
+  @options[:pass] = Base64.decode64(@options[:encoded_pass])
+end
+
 if not @options[:pass]
   @options[:pass] = ask('Satellite password: ') { |q| q.echo = false }
 end
@@ -156,6 +164,7 @@ end
 def clean()
   tasks = []
   cvs = []
+  firstccv = true
   req = @api.resource(:content_views).call(:index, {:organization_id => @options[:org], :full_results => true})
   cvs.concat(req['results'])
   while (req['results'].length == req['per_page'].to_i)
@@ -163,18 +172,33 @@ def clean()
     cvs.concat(req['results'])
   end
 
+  # Order the Content View to have before the non Composite Content View
+  # Needed to have delete proceeding in the correct order
+  cvs.sort_by! { |cv| cv["composite"] ? 0 : 1 }
+
+  # Parse the CV
   cvs.each do |cv|
     keep = []
-    puts "Inspecting #{cv['name']}"
+    puts "Inspecting #{cv['label']}"
+    # On the first Composite Content View found, we need to ensure that dependencies has been cleaned up
+    if cv["composite"] == true and firstccv == true
+      puts "First Composite Content View, waiting for the Content View tasks to be completed"
+      firstccv = false
+      wait(tasks)
+    end
     cv['versions'].sort_by { |v| v['version'].to_f }.reverse.each do |version|
       if not version['environment_ids'].empty?
-        puts_verbose " #{cv['name']} v#{version['version']} is published to the following environments: #{version['environment_ids']}, skipping."
+        puts_verbose " #{cv['label']} v#{version['version']} is published to the following environments: #{version['environment_ids']}, skipping."
         next
+      else
+        puts_verbose " #{cv['label']} v#{version['version']} is not used by any environment."
       end
       version_details = @api.resource(:content_view_versions).call(:show, {:id => version['id']})
       if not version_details['composite_content_view_ids'].empty?
-        puts_verbose " #{cv['name']} v#{version['version']} is used by the following composite contentviews: #{version_details['composite_content_view_ids']}, skipping."
+        puts_verbose " #{cv['label']} v#{version['version']} is used by the following composite contentviews: #{version_details['composite_content_view_ids']}, skipping."
         next
+      else
+        puts_verbose " #{cv['label']} v#{version['version']} is not used by any composite contentviews."
       end
       if keep.length < @options[:keep]
         keep.push(version)
@@ -182,13 +206,21 @@ def clean()
       else
         puts " removing #{version['version']}"
         if not @options[:noop]
-          req = @api.resource(:content_view_versions).call(:destroy, {:id => version['id']})
+          begin
+            req = @api.resource(:content_view_versions).call(:destroy, {:id => version['id']})
+          rescue RestClient::ExceptionWithResponse => err
+            puts " removal of #{cv['label']}, id #{cv['id']} v#{version['version']} failed. Error message '#{err.response}'"
+            exit(1)
+          end
           tasks << req['id']
           if @options[:sequential] > 0 and tasks.length >= @options[:sequential]
             tasks = wait(tasks)
+            puts "  removed content view version with id #{version['id']}"
+          else
+            puts "  [task enqueued] removed content view version with id #{version['id']}"
           end
         else
-          puts " [noop] would delete content view version with id #{version['id']}"
+          puts "  [noop] removed content view version with id #{version['id']}"
         end
       end
     end
@@ -198,14 +230,14 @@ def clean()
 end
 
 def checktask(task, last_date)
-  task_completed_at = Time.xmlschema(task['ended_at']) rescue Time.parse(task['ended_at'])
+  task_completed_at = Time.xmlschema(task['started_at']) rescue Time.parse(task['started_at'])
   if task_completed_at >= last_date
-    puts_verbose "Past task was completed at #{task_completed_at}, which is after #{last_date}"
+    puts_verbose "Past task was completed at #{task_completed_at}, which is after #{last_date} publish of CV. Checking the output of the task."
     if task['humanized']['output'] == "No new packages."
-      puts_verbose "#{task['humanized']['output']} This past task will NOT trigger a Publish."
+      puts_verbose "Output for the task is '#{task['humanized']['output']}'. This past task will NOT trigger a Publish."
       return false
     else
-      puts_verbose "#{task['humanized']['output']} This past task will trigger a Publish."
+      puts_verbose "Output for the task is '#{task['humanized']['output']}'. This past task will trigger a Publish."
       return true
     end
   end
@@ -223,6 +255,9 @@ def checkoldtask(task, last_date)
   return true
 end
 
+# Update manage the content of a Composite Content Views.
+# Given the parameter in configuration file, check the Composite Content View needed Content View version, and update it accordingly.
+# If a change is performed in one Composite Conent View, then publish it.
 def update()
   tasks = []
 
@@ -235,16 +270,18 @@ def update()
   end
 
   ccvs.each do |ccv|
+    # if CV is not composite, skip
+    puts_verbose "Started parsing Content View #{ccv['label']}"
     next if ! ccv['composite']
 
     was_updated = false
 
-    puts "Inspecting #{ccv['name']}"
+    puts "Inspecting #{ccv['label']}, id #{ccv['id']}"
 
     # loop through the components and check if they are uptodate
     ids = Array.new(ccv['component_ids'])
-    ccv['components'].each do |component|
-      puts " Checking #{component['content_view']['name']}"
+    ccv['components'].each_with_index do |component, component_id|
+      puts " Checking #{component['content_view']['label']}"
 
       # get the desired version for this component from the YAML
       # either the version for the component in this CCV is set
@@ -261,17 +298,45 @@ def update()
         next
       end
 
+      # Check if latest is existing and set. If so, the value will be checked to see if this match with the current one.
+      if ccv["content_view_components"][component_id].key?("latest")
+        cv_latest = ccv["content_view_components"][component_id]["latest"]
+      else
+        # Satellite version does not support latest keyword (<6.3)
+        cv_latest = Nil
+        puts_verbose "latest key not existing"
+      end
+
       # instead of hard-coding the versions, the user can also specify "latest"
+      # to be managed differently in 6.3 as "latest" is likely a valid keyword (to be checked in API)
       if desired_version == 'latest'
+        # TODO if cv_latest == False, set it to True through API
         cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id']})
         cvversions = cvversions['results'].sort_by { |v| v['version'].to_f }.reverse
         desired_version = cvversions[0]['version']
-        puts_verbose "  Found #{desired_version} as the 'latest' version"
+        puts_verbose "  Found #{desired_version}, id #{cvversions[0]['id']} as the 'latest' version available"
+      end
+
+      if cv_latest and cv_latest == true
+        puts "   'latest' version required in Katello CCV."
+        # 6.3 or newer version of Satellite. Have to check the CCV publish date and CV publish date.
+        ccv_published = Time.xmlschema(ccv['last_published']) rescue Time.parse(ccv['last_published'])
+        cv_published = Time.xmlschema(cvversions[0]['updated_at']) rescue Time.parse(cvversions[0]['updated_at'])
+        puts_verbose "CCV published at #{ccv_published}, CV published at #{cv_published}"
+        if cv_published > ccv_published
+          puts "   CV has been published before the CCV. Forcing a publish of CCV"
+          # do the update
+          was_updated = true
+        else
+          puts "   CV has been publised after CCV. No action neeeded"
+        end
+        # skip the next check over the component because have latest set on CCV at Katello level
+        next
       end
 
       # if the version of the component does not match the one the user requested update it
       if component['version'].to_s != desired_version.to_s
-        puts "  Updating from #{component['version']} to #{desired_version}"
+        puts "  Current version #{component['version']} is not matching desired one latest, which is #{desired_version}"
         oldids = ids.dup
         ids.delete(component['id'])
         cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id'], :version => desired_version})
@@ -281,6 +346,8 @@ def update()
         puts "  New components: #{ids}"
         # do the update
         was_updated = true
+      else
+        puts "  Not updating as #{component['version']} is already the desired version"
       end
     end
 
@@ -289,8 +356,9 @@ def update()
       puts " Committing new content view versions"
       if not @options[:noop]
         @api.resource(:content_views).call(:update, {:id => ccv['id'], :component_ids => ids })
+        puts "  updated CCV #{ccv['id']} to #{ids}"
       else
-        puts "  [noop] updating CCV #{ccv['id']} to #{ids}"
+        puts "  [noop] updated CCV #{ccv['id']} to #{ids}"
       end
       puts " Publishing new version as CCV had changes"
       # do the publish
@@ -299,9 +367,12 @@ def update()
         tasks << req['id']
         if @options[:sequential] > 0 and tasks.length >= @options[:sequential]
           tasks = wait(tasks)
+          puts "  published CCV #{ccv['id']}"
+        else
+          puts "  [task enqueued] published CCV #{ccv['id']}"
         end
       else
-        puts "  [noop] publishing CCV #{ccv['id']}"
+        puts "  [noop] published CCV #{ccv['id']}"
       end
     end
   end
@@ -322,9 +393,9 @@ def promote()
 
   ccvs.each do |ccv|
     next if not ccv['composite'] and not @options[:promote_cvs]
-    next if not @yaml[:promote].include?(ccv['name']) and not @yaml[:promote].include?("all")
+    next if not @yaml[:promote].include?(ccv['label']) and not @yaml[:promote].include?("all")
 
-    puts "Inspecting #{ccv['name']}"
+    puts "Inspecting #{ccv['label']}"
 
     latest_version = ccv['versions'].sort_by { |v| v['version'].to_f }.reverse[0]
     next if ! latest_version
@@ -334,10 +405,18 @@ def promote()
       if not @options[:noop]
         req = @api.resource(:content_view_versions).call(:promote, {:id => latest_version['id'], :environment_id => @options[:lifecycle], :force => @options[:force]})
         tasks << req['id']
-        wait([req['id']]) if @options[:sequential]
+        #if @options[:sequential] > 0 and tasks.length >= @options[:sequential] # Why are not we using this standard code?
+        if @options[:sequential] > 0
+          tasks = wait(tasks)
+          puts " promoted #{latest_version['id']} to lifecycle-environment #{@options[:lifecycle]}"
+        else
+          puts " [task enqueued] promoted #{latest_version['id']} to lifecycle-environment #{@options[:lifecycle]}"
+        end
       else
-        puts " [noop] Promoting #{latest_version['id']} to lifecycle-environment #{@options[:lifecycle]}"
+        puts " [noop] promoted #{latest_version['id']} to lifecycle-environment #{@options[:lifecycle]}"
       end
+    else
+      puts_verbose " CCV #{latest_version['id']} version #{latest_version['version']} already promoted to lifecycle-environment #{@options[:lifecycle]}"
     end
   end
 
@@ -357,14 +436,15 @@ def publish()
 
   cvs.each do |cv|
     # if CV is not listed in csv, skip
-    puts_verbose "Checking Content View #{cv['name']}"
-    next if not @yaml[:publish].include?(cv['name'])
+    puts_verbose "Started parsing Content View #{cv['label']}"
+    next if not @yaml[:publish].include?(cv['label'])
 
     # if the CV is listed, write it
-    puts "Inspecting #{cv['name']} as listed in CSV"
+    puts "Inspecting #{cv['label']} as listed in CSV"
 
     # initialize variables
     needs_publish = false
+    oldest_repo_last_sync = false
     # check if this CV has ever been published
     if cv.has_key?('versions') and cv['versions'].length > 0
       last_ver_published = cv['versions'].sort_by{|ver| ver['published']}.last['published']
@@ -378,24 +458,29 @@ def publish()
       # if not published, save 0 as published time
       cv_last_published = Time.new(0)
     end
+    puts_verbose "Content View #{cv['name']} last published time #{cv_last_published} (0 means never published)"
     # Check every repo in the CV
     cv['repository_ids'].each do |repo_id|
       # get repo data
       repo = @api.resource(:repositories).call(:show, {:id => repo_id})
       # check if the last sync has been ever completed
-      if repo.has_key?('last_sync') and repo['last_sync'] and repo['last_sync'].has_key?('ended_at') and repo['last_sync']['ended_at']
+      if repo.has_key?('last_sync') and repo['last_sync'] and repo['last_sync'].has_key?('started_at') and repo['last_sync']['started_at']
         # if sync completed, save last end sync time
-        repo_last_sync = Time.xmlschema(repo['last_sync']['ended_at']) rescue Time.parse(repo['last_sync']['ended_at'])
+        repo_last_sync = Time.xmlschema(repo['last_sync']['started_at']) rescue Time.parse(repo['last_sync']['started_at'])
       else
         # if sync never completed, save 0 as sync time
         repo_last_sync = Time.new(0)
+      end
+      # if oldest_repo_last_sync is older then the current value, or false, set to the current repo sync time
+      if not oldest_repo_last_sync or repo_last_sync < oldest_repo_last_sync
+        oldest_repo_last_sync = repo_last_sync
       end
       # check if last repo sync time happened after last CV publish
       if repo_last_sync > cv_last_published
         # if checkrepo option is on, a deeper check will be done
         if @options[:checkrepos]
           # write some info about repo that we are checking
-          puts " repo #{repo['label']} (id: #{repo['id']}) seems newer than CV #{cv['name']} (id: #{cv['id']}), checking if sync contains new packages."
+          puts " repo #{repo['label']} (id: #{repo['id']}) seems newer than CV #{cv['label']} (id: #{cv['id']}), checking if sync contains new packages."
           # get last sync repo output from foreman task
           sync_task = @api.resource(:foreman_tasks).call(:show, {:id => repo['last_sync']['id']})
           # check if the package contains "No new package.". The opposite is a number of packages.
@@ -409,11 +494,11 @@ def publish()
               while (taskreq == nil or taskreq['results'].length == taskreq['per_page'].to_i)
                 # if nil, new data will be taken from zero. otherwise take next page
                 if (taskreq == nil)
-                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success', :full_results => true, :per_page => 10, :sort_by => :ended_at})
-                  puts_verbose "Inspecing sync tasks to #10"
-                else
-                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success', :full_results => true, :per_page => taskreq['per_page'], :sort_by => :ended_at, :page => taskreq['page'].to_i+1})
+                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success and started_at >= #{cv_last_published.strftime("%Y%m%dT%H:%M:%S")} and resource_id = #{repo["id"]}', :full_results => true, :per_page => 10, :sort_by => :started_at})
                   puts_verbose "Inspecing sync tasks to ##{taskreq['per_page']}"
+                else
+                  taskreq = @api.resource(:foreman_tasks).call(:index, {:search => 'label=Actions::Katello::Repository::Sync and result=success and started_at >= #{cv_last_published.strftime("%Y%m%dT%H:%M:%S")} and resource_id = #{repo["id"]}', :full_results => true, :per_page => taskreq['per_page'], :sort_by => :started_at, :page => taskreq['page'].to_i+1})
+                  puts_verbose "Inspecing sync tasks to ##{taskreq['per_page'].to_i * taskreq['page'].to_i}"
                 end
                 # iterate over the results
                 taskreq['results'].each do |tasker|
@@ -447,7 +532,7 @@ def publish()
             needs_publish = true
           end
         else
-          puts " repo #{repo['label']} (id: #{repo['id']}) seems newer than CV #{cv['name']} (id: #{cv['id']}) (#{repo_last_sync} > #{cv_last_published}), lets publish"
+          puts " repo #{repo['label']} (id: #{repo['id']}) seems newer than CV #{cv['label']} (id: #{cv['id']}) (#{repo_last_sync} > #{cv_last_published}), lets publish"
           needs_publish = true
         end
       end
@@ -459,16 +544,21 @@ def publish()
     end
     # finally if the CV has to be published, do it
     if needs_publish
-      puts "Publishing #{cv['name']}"
+      puts "Publishing #{cv['label']}"
       if not @options[:noop]
         req = @api.resource(:content_views).call(:publish, {:id => cv['id'], :description => @options[:description]})
         tasks << req['id']
         if @options[:sequential] > 0 and tasks.length >= @options[:sequential]
           tasks = wait(tasks)
+          puts " published #{cv['label']}"
+         else
+          puts " [task enqueued] published #{cv['label']}"
         end
       else
-        puts " [noop] published #{cv['name']}"
+        puts " [noop] published #{cv['label']}"
       end
+    else
+      puts_verbose "Publishing #{cv['label']} is not needed. Oldest repo sync for this Content View at #{oldest_repo_last_sync}"
     end
   end
   wait(tasks)
