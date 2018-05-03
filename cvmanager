@@ -64,9 +64,6 @@ optparse = OptionParser.new do |opts|
   opts.on("-p", "--pass=PASS", "Password to log in to Satellite") do |p|
     @options[:pass] = p
   end
-  opts.on("--encoded_pass=PASS", "Password, base64 encoded, to log in to Satellite") do |encoded_pass|
-    @options[:encoded_pass] = encoded_pass
-  end
   opts.on("-o", "--organization-id=ID", "ID of the Organization to manage CVs in") do |o|
     @options[:org] = o
   end
@@ -132,11 +129,6 @@ if not @options[:user]
   @options[:user] = ask('Satellite username: ')
 end
 
-if @options[:encoded_pass]
-  # Decrypt password with base 64
-  @options[:pass] = Base64.decode64(@options[:encoded_pass])
-end
-
 if not @options[:pass]
   @options[:pass] = ask('Satellite password: ') { |q| q.echo = false }
 end
@@ -180,15 +172,12 @@ def clean()
   cvs.each do |cv|
     keep = []
     puts "Inspecting #{cv['label']}"
-<<<<<<< HEAD
     # On the first Composite Content View found, we need to ensure that dependencies has been cleaned up
     if cv["composite"] == true and firstccv == true
       puts "First Composite Content View, waiting for the Content View tasks to be completed"
       firstccv = false
       wait(tasks)
     end
-=======
->>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
     cv['versions'].sort_by { |v| v['version'].to_f }.reverse.each do |version|
       if not version['environment_ids'].empty?
         puts_verbose " #{cv['label']} v#{version['version']} is published to the following environments: #{version['environment_ids']}, skipping."
@@ -279,19 +268,11 @@ def update()
 
     was_updated = false
 
-<<<<<<< HEAD
     puts "Inspecting #{ccv['label']}, id #{ccv['id']}"
 
     # loop through the components and check if they are uptodate
     ids = Array.new(ccv['component_ids'])
     ccv['components'].each_with_index do |component, component_id|
-=======
-    puts "Inspecting #{ccv['label']}"
-
-    # loop through the components and check if they are uptodate
-    ids = Array.new(ccv['component_ids'])
-    ccv['components'].each do |component|
->>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
       puts " Checking #{component['content_view']['label']}"
 
       # get the desired version for this component from the YAML
@@ -447,11 +428,7 @@ def publish()
 
   cvs.each do |cv|
     # if CV is not listed in csv, skip
-<<<<<<< HEAD
     puts_verbose "Started parsing Content View #{cv['label']}"
-=======
-    puts_verbose "Checking Content View #{cv['label']}"
->>>>>>> b997a78ad756247ea6f3464ab7852bb7050719fe
     next if not @yaml[:publish].include?(cv['label'])
 
     # if the CV is listed, write it
