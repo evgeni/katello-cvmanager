@@ -71,7 +71,7 @@ Example configuration for `cvmanager`:
 
     :settings:
       :user: admin
-      :encoded_pass: Y2hhbmdlbWU=
+      :pass: changeme
       :uri: https://localhost
       :timeout: 300
       :org: 1
