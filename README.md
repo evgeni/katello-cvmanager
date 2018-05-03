@@ -92,7 +92,6 @@ Example configuration for `cvmanager`:
 
 * `user`: username of a Satellite 6 user to execute the actions with
 * `pass`: password of the same user in cleartext
-* `encoded_pass`: password of the same user in base64 encryption (generate with 'echo -n "sat_password" | base64')
 * `uri`: URI of the Satellite 6, `https://localhost` will work when executed directly on the Satellite machine
 * `timeout`: Timeout, in seconds, for any API calls made
 * `org`: Organization ID (not name) for managing content in
