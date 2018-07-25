@@ -182,10 +182,15 @@ def clean()
       else
         puts " removing #{version['version']}"
         if not @options[:noop]
-          req = @api.resource(:content_view_versions).call(:destroy, {:id => version['id']})
-          tasks << req['id']
-          if @options[:sequential] > 0 and tasks.length >= @options[:sequential]
-            tasks = wait(tasks)
+          begin
+            req = @api.resource(:content_view_versions).call(:destroy, {:id => version['id']})
+            tasks << req['id']
+            if @options[:sequential] > 0 and tasks.length >= @options[:sequential]
+              tasks = wait(tasks)
+            end
+          rescue
+            puts " Impossible to delete version \"#{version['id']}\""
+            puts " Probably it is locked by a Composite Content View"
           end
         else
           puts " [noop] would delete content view version with id #{version['id']}"
