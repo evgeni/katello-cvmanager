@@ -265,9 +265,13 @@ def update()
 
     puts "Inspecting #{ccv['label']}"
 
+    # grab the latest published version of this ccv and it's components
+    ccvv = ccv['versions'].select { |obj| obj['version'] == ccv['latest_version'] }.first
+    ccvv_components = @api.resource(:content_view_versions).call(:index, {:composite_version_id => ccvv['id']})
+
     # loop through the components and check if they are uptodate
-    ids = Array.new(ccv['component_ids'])
-    ccv['components'].each do |component|
+    ids = ccvv_components['results'].map{ |component| component['id'] }
+    ccvv_components['results'].each do |component|
       puts " Checking #{component['content_view']['label']}"
 
       # get the desired version for this component from the YAML
@@ -286,21 +290,24 @@ def update()
       end
 
       # instead of hard-coding the versions, the user can also specify "latest"
+      desired_version_id = nil
       if desired_version == 'latest'
         cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id']})
         cvversions = cvversions['results'].sort_by { |v| v['version'].to_f }.reverse
         desired_version = cvversions[0]['version']
+        desired_version_id = cvversions[0]['id']
         puts_verbose "  Found #{desired_version} as the 'latest' version"
       end
 
-      # if the version of the component does not match the one the user requested update it
-      if component['version'].to_s != desired_version.to_s
+      # if the component version in the most recently published composite version does not match the one the user requested update it
+      if component['version'] != desired_version.to_s
         puts "  Updating from #{component['version']} to #{desired_version}"
         oldids = ids.dup
-        ids.delete(component['id'])
-        cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id'], :version => desired_version})
-        desired_version_id = cvversions['results'][0]['id']
-        ids.push(desired_version_id)
+        if desired_version_id.nil?
+          cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id'], :version => desired_version})
+          desired_version_id = cvversions['results'][0]['id']
+        end
+        ids.map! { |ver| ver == component['id'] ? desired_version_id : ver }
         puts "  Old components: #{oldids}"
         puts "  New components: #{ids}"
         # do the update
