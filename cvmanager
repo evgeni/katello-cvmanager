@@ -274,11 +274,11 @@ def update()
       # either the version for the component in this CCV is set
       # or it is set globally
       # never touch non-mentioned components
-      if @yaml[:ccv].is_a?(Hash) and @yaml[:ccv].has_key?(ccv['label']) and @yaml[:ccv][ccv['label']].has_key?(component['content_view']['label'])
-        desired_version = @yaml[:ccv][ccv['label']][component['content_view']['label']]
+      if @yaml[:ccv].is_a?(Hash) and @yaml[:ccv].has_key?(ccv['label']) and @yaml[:ccv][ccv['label']].has_key?(component['content_view']['name'])
+        desired_version = @yaml[:ccv][ccv['label']][component['content_view']['name']]
         puts_verbose "  Desired version #{desired_version} found in CCV"
-      elsif @yaml[:cv].is_a?(Hash) and @yaml[:cv].has_key?(component['content_view']['label'])
-        desired_version = @yaml[:cv][component['content_view']['label']]
+      elsif @yaml[:cv].is_a?(Hash) and @yaml[:cv].has_key?(component['content_view']['name'])
+        desired_version = @yaml[:cv][component['content_view']['name']]
         puts_verbose "  Desired version #{desired_version} found in CV"
       else
         puts_verbose "  Desired version not found, skipping"
@@ -292,22 +292,10 @@ def update()
         desired_version = cvversions[0]['version']
         puts_verbose "  Found #{desired_version} as the 'latest' version"
       end
-
-      # if the version of the component does not match the one the user requested update it
-      if component['version'].to_s != desired_version.to_s
-        puts "  Updating from #{component['version']} to #{desired_version}"
-        oldids = ids.dup
-        ids.delete(component['id'])
-        cvversions = @api.resource(:content_view_versions).call(:index, {:content_view_id => component['content_view']['id'], :version => desired_version})
-        desired_version_id = cvversions['results'][0]['id']
-        ids.push(desired_version_id)
-        puts "  Old components: #{oldids}"
-        puts "  New components: #{ids}"
-        # do the update
-        was_updated = true
-      end
+    # end loop
     end
 
+    was_updated = true
     if was_updated
       #Change the member content view versions; We do this once at the end, so if there was multiple CV changes, its only one call
       puts " Committing new content view versions"
