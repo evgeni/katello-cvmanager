@@ -7,7 +7,8 @@ Gem::Specification.new do |gem|
   gem.summary     = ""
   gem.description = ""
 
-  gem.files = ["LICENSE", "README.md", "cvmanager", "cvmanager.yaml"]
+  gem.files = ["LICENSE", "README.md", "bin/cvmanager", "cvmanager.yaml"]
+  gem.executables = ["cvmanager"]
 
   gem.add_dependency "apipie-bindings"
   gem.add_dependency "highline"
