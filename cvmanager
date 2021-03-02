@@ -350,17 +350,40 @@ def promote()
 
     puts "Inspecting #{ccv['label']}"
 
-    latest_version = ccv['versions'].sort_by { |v| v['version'].to_f }.reverse[0]
-    next if ! latest_version
+    # get the desired version for this component from the YAML
+    # either the version for the component in this CCV is set
+    # or it is set globally
+    # never touch non-mentioned components
+    if @yaml[:cv].is_a?(Hash) and @yaml[:cv].has_key?(ccv['label'])
+      users_version = @yaml[:cv][ccv['label']]
+      puts_verbose "  Desired version #{users_version} found in CV"
 
-    if not latest_version['environment_ids'].include?(@options[:lifecycle])
-      puts " Promoting latest version to lifecycle-environment #{@options[:lifecycle]}"
-      if not @options[:noop]
-        req = @api.resource(:content_view_versions).call(:promote, {:id => latest_version['id'], :environment_id => @options[:lifecycle], :force => @options[:force]})
-        tasks << req['id']
-        wait([req['id']]) if @options[:sequential]
+      # instead of hard-coding the versions, the user can also specify "latest"
+      # figure out the latest content view version, choose it, unless there is none
+      if users_version == 'latest'
+        desired_version = ccv['versions'].sort_by { |v| v['version'].to_f }.reverse[0]
+        next if ! desired_version
       else
-        puts " [noop] Promoting #{latest_version['id']} to lifecycle-environment #{@options[:lifecycle]}"
+        desired_version = ccv['versions'].select {|v| v["version"].to_f == users_version }[0]
+        next if ! desired_version
+      end
+    else
+      puts_verbose "  Desired version not found, skipping"
+      next
+    end
+
+    if not desired_version['environment_ids'].include?(@options[:lifecycle])
+      puts " Promoting version #{desired_version['version']} to lifecycle-environment #{@options[:lifecycle]}"
+      if not @options[:noop]
+        begin
+          req = @api.resource(:content_view_versions).call(:promote, {:id => desired_version['id'], :environment_id => @options[:lifecycle], :force => @options[:force]})
+          tasks << req['id']
+          wait([req['id']]) if @options[:sequential]
+        rescue RestClient::ExceptionWithResponse => e # catch exceptions with more helpful error content
+          puts e.response
+        end
+      else
+        puts " [noop] Promoting #{desired_version['version']} to lifecycle-environment #{@options[:lifecycle]}"
       end
     end
   end
